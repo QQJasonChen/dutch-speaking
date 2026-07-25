@@ -2,11 +2,13 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#050510">
 <title>AI 口說批改 · 荷蘭文 A2 Spreken</title>
 <style>
   :root {
+    color-scheme: dark;
     --bg:#050510; --surface:rgba(255,255,255,0.04); --surface2:rgba(255,255,255,0.08);
     --border:rgba(255,255,255,0.09); --text:#f2f2f7; --text2:#a0a0b8; --text3:#606078;
     --green:#34d399; --red:#f87171; --orange:#fb923c; --blue:#60a5fa; --purple:#a78bfa;
@@ -134,12 +136,24 @@
   .links a,.links button{display:block;width:100%;padding:13px;border-radius:13px;background:var(--surface2);
     border:1px solid var(--border);color:var(--text);font-size:14px;font-weight:700;text-decoration:none;
     text-align:center;cursor:pointer}
+
+  /* 可及性與觸控（Vercel Web Interface Guidelines）*/
+  button, a, input { touch-action: manipulation; }
+  :focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  }
+  /* 實測流暢度卡（AI 批改回傳的真實語速/停頓）*/
+  .ai-flu{display:flex;gap:8px;margin:10px 0;flex-wrap:wrap}
+  .ai-flu span{padding:6px 11px;border-radius:99px;background:rgba(96,165,250,0.10);
+    border:1px solid rgba(96,165,250,0.25);font-size:12px;color:var(--text2);font-variant-numeric:tabular-nums}
+  .ai-flu b{color:var(--text)}
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="top">
-    <a class="back" href="https://dutch-exam-ace.com">←</a>
+    <a class="back" href="https://dutch-exam-ace.com" aria-label="回 dutch-exam-ace 首頁">←</a>
     <h1>🗣️ 口說模擬器</h1>
     <span class="count" id="counter"></span>
   </div>
@@ -173,6 +187,9 @@
 
 <script>
 const DATA_URL = 'output/spreken_items.json';
+// 音檔本尊放在 language-practice-hub（同 github.io 網域）——這個獨立頁只帶題庫
+// JSON、不帶 438MB 音檔；沒有這個 base 的話 output/{vid}/audio.mp3 會 404（無聲）。
+const AUDIO_BASE = 'https://qqjasonchen.github.io/language-practice-hub/';
 const STORE_KEY = 'lph_spreken_v1';     // { "vid:idx": {reps, interval, due, lastGrade, tries} }
 const TIMER_KEY = 'lph_spreken_timer';
 const MIC_KEY = 'lph_spreken_mic';
@@ -273,12 +290,14 @@ let _audio = null, _stopT = null, _onEnd = null;
 function playRange(vid, start, end, onDone) {
   if (_stopT) { clearTimeout(_stopT); _stopT = null; }
   if (!_audio) _audio = new Audio();
-  const src = `output/${vid}/audio.mp3`;
+  const src = `${AUDIO_BASE}output/${vid}/audio.mp3`;
   if (_audio.src.indexOf(src) === -1) _audio.src = src;
   const go = () => {
     _audio.playbackRate = 1.0;
     _audio.currentTime = Math.max(0, start);
-    _audio.play().catch(()=>{});
+    // iOS 會擋「非手勢」的自動播放（倒數結束自動進模範答案那次）——
+    // 被擋就明講，請使用者點 🔊，不要無聲讓人以為壞掉。
+    _audio.play().catch(() => showAudioHint());
     const durMs = Math.max(1200, (end - start) * 1000 + 250);
     _stopT = setTimeout(() => { _audio.pause(); if (onDone) onDone(); }, durMs);
   };
@@ -315,6 +334,18 @@ function renderQuestion() {
   playQ();
 }
 function playQ() { const it = session[si]; playRange(it.vid, it.q_start, it.q_end); }
+// 自動播放被瀏覽器擋下時的一次性提示（顯示在卡片頂端，點任何 🔊 即可播）
+function showAudioHint() {
+  if (document.getElementById('audio-hint')) return;
+  const card = document.getElementById('card');
+  if (!card) return;
+  const div = document.createElement('div');
+  div.id = 'audio-hint';
+  div.setAttribute('role', 'status');
+  div.style.cssText = 'margin:8px 0;padding:9px 12px;border-radius:10px;background:rgba(251,146,60,0.12);border:1px solid rgba(251,146,60,0.35);font-size:12.5px;color:var(--text2)';
+  div.textContent = '🔇 瀏覽器擋了自動播放 — 點「🔊」按鈕手動播放音檔';
+  card.insertBefore(div, card.firstChild.nextSibling);
+}
 function revealQ() { qRevealed = true; const c = document.getElementById('card'); if (c) c.classList.add('revealed'); }
 
 // ── in-session 控制列：返回 + 隱藏/顯示原文 ──
@@ -439,7 +470,7 @@ function renderModel() {
         <button class="b ai-btn" id="ai-grade-btn" style="display:${myRecBlob ? 'block' : 'none'}"
           onclick="gradeMine()">🤖 AI 批改我的口說</button>
       </div>
-      <div id="ai-feedback"></div>
+      <div id="ai-feedback" aria-live="polite"></div>
       <div class="grades">
         <button class="grade g0" onclick="grade(0)"><span class="e">😣</span><span class="t">講不出來</span></button>
         <button class="grade g1" onclick="grade(1)"><span class="e">🤔</span><span class="t">卡卡的</span></button>
@@ -502,8 +533,8 @@ function showPaywall(wrong) {
     '<div style="font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:12px">' +
     '練習工具全部免費；<b style="color:var(--text)">AI 逐句批改口說＋發音分析</b>是付費功能。<br>' +
     '已購買請輸入存取碼（在你的 email 裡）。</div>' +
-    '<input id="pw-code" placeholder="ECHO-XXXXXX" autocomplete="off" autocapitalize="characters" ' +
-    'style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:15px;text-align:center;text-transform:uppercase;letter-spacing:1px;outline:none">' +
+    '<input id="pw-code" placeholder="ECHO-XXXXXX…" autocomplete="off" autocapitalize="characters" spellcheck="false" ' +
+    'style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:15px;text-align:center;text-transform:uppercase;letter-spacing:1px">' +
     '<button class="b ai-btn" style="width:100%;margin-top:10px" onclick="applyCode()">解鎖 AI 批改</button>' +
     '<div id="pw-err" style="color:var(--red);font-size:12px;margin-top:8px;min-height:15px;font-weight:700">' +
     (wrong ? '存取碼無效，請確認 email 裡的碼' : '') + '</div>' +
@@ -594,7 +625,9 @@ function renderFeedback(d, it) {
   const score = typeof d.score === 'number' ? d.score : null;
   const sColor = score == null ? 'var(--text2)' : score >= 70 ? 'var(--green)' : score >= 40 ? 'var(--orange)' : 'var(--red)';
   const pronRows = [...apiPron, ...localPron].slice(0, 6);
-  const fluency = d.fluency_zh || d.fluency || d.fluencyFeedback || '';
+  // d.fluency 是後端實測物件 {wpm, longPauses, durationSec…}，不能當字串印（會變 [object Object]）
+  const fluencyText = d.fluency_zh || d.fluencyFeedback || '';
+  const fm = (d.fluency && typeof d.fluency === 'object') ? d.fluency : null;
   const tips = d.tips_zh || d.tips || d.next_steps || [];
   let html = '<div class="ai-card">';
   html += '<div class="ai-tag">🤖 AI 口說批改</div>';
@@ -609,8 +642,14 @@ function renderFeedback(d, it) {
     });
     html += '</div>';
   }
+  if (fm && typeof fm.wpm === 'number') {
+    html += '<div class="ai-flu">' +
+      '<span>⏱ 語速 <b>' + esc(fm.wpm) + '</b> wpm</span>' +
+      '<span>⏸ 長停頓 <b>' + esc(fm.longPauses ?? 0) + '</b> 次</span>' +
+      '<span>🕐 <b>' + esc(fm.durationSec ?? '?') + '</b> 秒</span></div>';
+  }
   html += renderPronunciationHints(pronRows, !apiPron.length);
-  if (fluency) html += '<div class="ai-fb">' + esc(fluency) + '</div>';
+  if (fluencyText) html += '<div class="ai-fb">' + esc(fluencyText) + '</div>';
   if (Array.isArray(tips) && tips.length) html += '<div class="ai-fb">' + tips.slice(0, 3).map(esc).join('<br>') + '</div>';
   if (d.feedback_zh) html += '<div class="ai-fb">' + esc(d.feedback_zh) + '</div>';
   html += '</div>';
@@ -639,6 +678,8 @@ function renderSummary() {
   document.getElementById('prog').style.width = '100%';
   document.getElementById('counter').textContent = '';
   if (myRecUrl) { URL.revokeObjectURL(myRecUrl); myRecUrl = null; } myRecBlob = null;
+  // 釋放麥克風：session 結束後不要讓 iOS 的錄音指示燈一直亮著
+  if (micStream) { try { micStream.getTracks().forEach(t => t.stop()); } catch(e){} micStream = null; }
   const n0 = grades.filter(x => x.g === 0).length;
   const n1 = grades.filter(x => x.g === 1).length;
   const n2 = grades.filter(x => x.g === 2).length;
