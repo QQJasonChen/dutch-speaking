@@ -433,6 +433,19 @@ function finishAnswer() {
     mediaRec.onstop = () => {
       if (recChunks.length) {
         const blob = new Blob(recChunks, { type: mediaRec.mimeType || 'audio/webm' });
+        // iOS/iPad 偶發空錄音（只有 header 沒聲音）：擋掉，免得買家白花一次 AI 批改
+        if (blob.size < 1200) {
+          const c = document.querySelector('.card');
+          if (c && !document.getElementById('rec-empty-note')) {
+            const n = document.createElement('div');
+            n.id = 'rec-empty-note';
+            n.setAttribute('role', 'status');
+            n.style.cssText = 'margin:8px 0;padding:9px 12px;border-radius:10px;background:rgba(251,146,60,0.12);border:1px solid rgba(251,146,60,0.35);font-size:12.5px;color:var(--text2)';
+            n.textContent = '🎙️ 這次沒有錄到聲音（iPhone/iPad 偶爾會這樣）— 下一題請確認麥克風有開、錄音時有出聲';
+            c.insertBefore(n, c.firstChild);
+          }
+          return;
+        }
         myRecBlob = blob;
         myRecUrl = URL.createObjectURL(blob);
         const b = document.getElementById('my-rec-btn');
